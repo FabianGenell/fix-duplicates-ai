@@ -1,0 +1,16 @@
+{
+    "name": "fix-duplicates-ai",
+    "version": "1.0.0",
+    "main": "duplicate-lines.js",
+    "type": "module",
+    "scripts": {
+        "start duplicate-lines": "node duplicate-lines.js"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "description": "",
+    "dependencies": {
+        "papaparse": "^5.5.2"
+    }
+}
