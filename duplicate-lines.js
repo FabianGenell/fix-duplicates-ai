@@ -6,6 +6,8 @@ import { getBodyPrompt } from './prompts.js';
 const ROW_NAME = 'Body HTML';
 const ROW_NAME_ALT = '';
 
+const MODEL = 'gemma3:4b';
+
 const getPrompt = getBodyPrompt;
 
 const inputPath = './matrixify-output.csv';
@@ -211,10 +213,10 @@ async function generateVariation(text, handle) {
     console.log('Handle:', handle);
 
     const PROMPT = getPrompt(text, handle);
-    console.log('Calling Ollama with gemma3:4b model...');
+    console.log(`Calling Ollama with ${MODEL} model...`);
 
     const response = await Ollama.chat({
-        model: 'gemma3:4b',
+        model: MODEL,
         messages: [{ role: 'user', content: PROMPT }]
     });
 
