@@ -1,17 +1,27 @@
 {
     "name": "fix-duplicates-ai",
     "version": "1.0.0",
+    "description": "A tool for identifying duplicate entries in CSV files and generating unique variations using AI. 100% vibe coded",
     "main": "duplicate-lines.js",
     "type": "module",
     "scripts": {
-        "start duplicate-lines": "node duplicate-lines.js"
+        "start": "node duplicate-lines.js"
     },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
-    "description": "",
+    "keywords": [
+        "ai",
+        "csv",
+        "duplicates",
+        "shopify",
+        "matrixify",
+        "ollama"
+    ],
+    "author": "Fabian Genell",
+    "license": "MIT",
     "dependencies": {
-        "ollama": "^0.5.14",
-        "papaparse": "^5.5.2"
+        "ollama": "^0.4.4",
+        "papaparse": "^5.4.1"
+    },
+    "engines": {
+        "node": ">=14.0.0"
     }
 }
