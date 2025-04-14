@@ -72,6 +72,8 @@ Vereisten:
     - Geef alleen de nieuwe HTML-beschrijving terug — geen uitleg, geen extra tekst
     - De output moet volledig in het Nederlands zijn
     - Geef alleen de herschreven HTML terug, zonder aanhalingstekens of andere tekens eromheen
+    - BELANGRIJK: Begin je antwoord NOOIT met drie aanhalingstekens (""") of andere markeringen
+    - Begin je antwoord direct met de HTML-tag (bijvoorbeeld <p> of <div>)
     `;
 }
 

@@ -123,20 +123,125 @@ function findDuplicates(data, occurrenceMap) {
 }
 
 /**
+ * Clean the variation by removing unwanted prefixes and suffixes
+ * @param {string} variation - The variation to clean
+ * @returns {string} The cleaned variation
+ */
+function cleanVariation(variation) {
+    let cleaned = variation;
+    let wasCleaned = false;
+
+    // Check for triple quotes (""") and remove them
+    if (cleaned.startsWith('"""')) {
+        console.warn('⚠️ Warning: Generated variation starts with triple quotes - removing them');
+        cleaned = cleaned.slice(3);
+        wasCleaned = true;
+    }
+
+    if (cleaned.endsWith('"""')) {
+        console.warn('⚠️ Warning: Generated variation ends with triple quotes - removing them');
+        cleaned = cleaned.slice(0, -3);
+        wasCleaned = true;
+    }
+
+    // Check for code block markers (```html, ```, etc.)
+    if (cleaned.startsWith('```')) {
+        console.warn('⚠️ Warning: Generated variation starts with code block markers - removing them');
+        // Find the end of the code block
+        const endIndex = cleaned.lastIndexOf('```');
+        if (endIndex > 0) {
+            // Remove the opening ``` and any language identifier (like html)
+            cleaned = cleaned.substring(cleaned.indexOf('\n') + 1);
+            // Remove the closing ```
+            cleaned = cleaned.substring(0, cleaned.lastIndexOf('```')).trim();
+        } else {
+            // If no closing ``` found, just remove the opening
+            cleaned = cleaned.substring(cleaned.indexOf('\n') + 1).trim();
+        }
+        wasCleaned = true;
+    }
+
+    // Check for single or back quotes at the beginning
+    if (cleaned.startsWith('"') || cleaned.startsWith('`')) {
+        console.warn('⚠️ Warning: Generated variation starts with quotes - removing them');
+        cleaned = cleaned.slice(1);
+        wasCleaned = true;
+    }
+
+    // Check for single or back quotes at the end
+    if (cleaned.endsWith('"') || cleaned.endsWith('`')) {
+        console.warn('⚠️ Warning: Generated variation ends with quotes - removing them');
+        cleaned = cleaned.slice(0, -1);
+        wasCleaned = true;
+    }
+
+    // Check for HTML comment markers at the beginning
+    if (cleaned.startsWith('<!--')) {
+        console.warn('⚠️ Warning: Generated variation starts with HTML comment - removing it');
+        cleaned = cleaned.substring(cleaned.indexOf('-->') + 3).trim();
+        wasCleaned = true;
+    }
+
+    // Check for HTML comment markers at the end
+    if (cleaned.endsWith('-->')) {
+        console.warn('⚠️ Warning: Generated variation ends with HTML comment - removing it');
+        cleaned = cleaned.substring(0, cleaned.lastIndexOf('<!--')).trim();
+        wasCleaned = true;
+    }
+
+    // Check for trailing newlines or whitespace
+    if (cleaned.endsWith('\n') || cleaned.endsWith('\r\n')) {
+        console.warn('⚠️ Warning: Generated variation ends with newlines - removing them');
+        cleaned = cleaned.trim();
+        wasCleaned = true;
+    }
+
+    return cleaned;
+}
+
+/**
  * Generate a variation using Ollama
  * @param {string} text - Text to generate a variation for
  * @param {string} handle - Product handle with additional details
  * @returns {Promise<string>} Generated variation
  */
 async function generateVariation(text, handle) {
+    console.log('\nGenerating variation for:');
+    console.log('Original text:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
+    console.log('Handle:', handle);
+
     const PROMPT = getPrompt(text, handle);
+    console.log('Calling Ollama with gemma3:4b model...');
 
     const response = await Ollama.chat({
         model: 'gemma3:4b',
         messages: [{ role: 'user', content: PROMPT }]
     });
 
-    return response.message.content.trim();
+    const rawVariation = response.message.content.trim();
+    console.log(
+        'Generated variation:',
+        rawVariation.substring(0, 100) + (rawVariation.length > 100 ? '...' : '')
+    );
+
+    // Check if variation starts with triple quotes and throw error if it does
+    if (rawVariation.startsWith('"""')) {
+        console.error('❌ CRITICAL ERROR: Generated variation starts with triple quotes (""")');
+        console.error('This indicates a malformed response from the AI model');
+        console.error('Stopping the entire process to prevent data corruption');
+        throw new Error('AI response contains triple quotes (""") - stopping process');
+    }
+
+    // Clean the variation
+    const cleanedVariation = cleanVariation(rawVariation);
+    if (cleanedVariation !== rawVariation) {
+        console.log(
+            'Cleaned variation:',
+            cleanedVariation.substring(0, 100) + (cleanedVariation.length > 100 ? '...' : '')
+        );
+    }
+
+    return cleanedVariation;
 }
 
 /**
@@ -145,12 +250,18 @@ async function generateVariation(text, handle) {
  * @returns {Promise<Array>} Array of processed entries with variations
  */
 async function processBatch(batch) {
+    console.log(`\nStarting batch processing for ${batch.length} items:`);
+    console.log('Batch IDs:', batch.map((row) => row.ID).join(', '));
+
     const promises = batch.map(async (row) => {
+        console.log(`\nProcessing item ID: ${row.ID}`);
         const originalValue = getFieldValue(row);
         const handle = row.Handle || '';
 
         try {
+            console.time(`Generation time for ID ${row.ID}`);
             const variation = await generateVariation(originalValue, handle);
+            console.timeEnd(`Generation time for ID ${row.ID}`);
 
             // Create a new row with only the required fields
             return {
@@ -162,7 +273,8 @@ async function processBatch(batch) {
                 duplicate: 'true'
             };
         } catch (error) {
-            console.error(`Error generating variation for ID ${row.ID}: ${error.message}`);
+            console.error(`❌ Error generating variation for ID ${row.ID}:`);
+            console.error(`   Error details: ${error.message}`);
             // Return the original row without a variation
             return {
                 ID: row.ID,
@@ -175,7 +287,9 @@ async function processBatch(batch) {
         }
     });
 
-    return Promise.all(promises);
+    const results = await Promise.all(promises);
+    console.log(`\n✅ Batch processing completed for ${batch.length} items`);
+    return results;
 }
 
 /**
@@ -184,27 +298,48 @@ async function processBatch(batch) {
  * @returns {Promise<Array>} Array of entries with variations
  */
 async function generateVariations(duplicates) {
-    console.log(
-        `Generating variations for ${duplicates.length} duplicates in batches of ${BATCH_SIZE}...`
-    );
+    console.log('\n=== Starting Variation Generation ===');
+    console.log(`Total duplicates to process: ${duplicates.length}`);
+    console.log(`Batch size: ${BATCH_SIZE}`);
+    console.log(`Expected number of batches: ${Math.ceil(duplicates.length / BATCH_SIZE)}`);
+    console.log('=====================================\n');
+
     const variations = [];
+    const startTime = Date.now();
 
     // Process in batches
     for (let i = 0; i < duplicates.length; i += BATCH_SIZE) {
+        const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(duplicates.length / BATCH_SIZE);
         const batch = duplicates.slice(i, i + BATCH_SIZE);
-        console.log(
-            `Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(
-                duplicates.length / BATCH_SIZE
-            )}...`
-        );
+
+        console.log(`\n🔄 Processing Batch ${batchNumber}/${totalBatches}`);
+        console.log('----------------------------------------');
 
         const batchResults = await processBatch(batch);
         variations.push(...batchResults);
 
-        // Log progress
+        // Calculate and log progress
         const progress = Math.min(100, Math.round(((i + batch.length) / duplicates.length) * 100));
-        console.log(`Progress: ${progress}% (${i + batch.length}/${duplicates.length})`);
+        const timeElapsed = (Date.now() - startTime) / 1000; // in seconds
+        const itemsProcessed = i + batch.length;
+        const avgTimePerItem = timeElapsed / itemsProcessed;
+        const remainingItems = duplicates.length - itemsProcessed;
+        const estimatedRemainingTime = remainingItems * avgTimePerItem;
+
+        console.log('\n📊 Progress Update:');
+        console.log(`Progress: ${progress}% (${itemsProcessed}/${duplicates.length})`);
+        console.log(`Time elapsed: ${timeElapsed.toFixed(1)} seconds`);
+        console.log(`Average time per item: ${avgTimePerItem.toFixed(1)} seconds`);
+        console.log(`Estimated time remaining: ${estimatedRemainingTime.toFixed(1)} seconds`);
+        console.log('----------------------------------------');
     }
+
+    const totalTime = (Date.now() - startTime) / 1000;
+    console.log('\n=== Variation Generation Complete ===');
+    console.log(`Total time taken: ${totalTime.toFixed(1)} seconds`);
+    console.log(`Average time per item: ${(totalTime / duplicates.length).toFixed(1)} seconds`);
+    console.log('=====================================\n');
 
     return variations;
 }
@@ -215,8 +350,10 @@ async function generateVariations(duplicates) {
  * @param {string} filePath - Path to write to
  */
 function writeToCSV(data, filePath) {
+    console.log(`\nWriting ${data.length} rows to ${filePath}...`);
     const csvOut = Papa.unparse(data);
     fs.writeFileSync(filePath, csvOut, 'utf8');
+    console.log(`✅ Successfully wrote data to ${filePath}`);
 }
 
 /**
