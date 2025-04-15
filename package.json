@@ -23,5 +23,17 @@
     },
     "engines": {
         "node": ">=14.0.0"
-    }
+    },
+    "directories": {
+        "lib": "lib"
+    },
+    "devDependencies": {},
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/FabianGenell/fix-duplicates-ai.git"
+    },
+    "bugs": {
+        "url": "https://github.com/FabianGenell/fix-duplicates-ai/issues"
+    },
+    "homepage": "https://github.com/FabianGenell/fix-duplicates-ai#readme"
 }

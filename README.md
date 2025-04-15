@@ -1,116 +1,109 @@
-# Fix Duplicates AI
+# CSV Duplicates Handler
 
-A Node.js tool for identifying duplicate entries in CSV files and generating unique variations using AI. Designed to work seamlessly with Matrixify for Shopify data export and import.
-
-## Overview
-
-This tool processes CSV files exported from Matrixify, identifies duplicate entries based on specific fields (like title tags or body HTML), and uses AI to generate unique variations for those duplicates. It's particularly useful for e-commerce platforms where duplicate content can negatively impact SEO. The generated variations can be imported back into Shopify using Matrixify.
+A Node.js utility for detecting and fixing duplicate entries in CSV files by generating unique AI-powered variations. Particularly useful for collection data where duplicate content needs to be unique for SEO purposes.
 
 ## Features
 
-- **Matrixify Integration**: Works with CSV files exported from Matrixify and produces output ready for import
-- **Duplicate Detection**: Identifies duplicate entries in CSV files based on specified fields
-- **AI-Powered Variations**: Generates unique variations for duplicate entries using any Ollama model
-- **Batch Processing**: Processes items in configurable batches for optimal performance
-- **Comprehensive Logging**: Provides detailed progress information and error handling
-- **Clean Output**: Produces two CSV files - one with duplicate markers and one with AI-generated variations
+- Automatically detects duplicate entries in CSV files
+- Generates unique AI-powered variations of duplicate content using Ollama
+- Supports batch processing for efficiency
+- Preserves original data and marks duplicates
+- Specialized prompts for different content types (titles, descriptions, HTML content)
+- Detailed logging with progress tracking
 
 ## Prerequisites
 
-- Node.js (v14 or higher)
-- Ollama installed and running locally with any model of your choice
+- Node.js 14 or higher
+- Ollama installed and accessible (for AI variation generation)
 
 ## Installation
 
-1. Clone this repository:
-   ```
-   git clone https://github.com/yourusername/fix-duplicates-ai.git
-   cd fix-duplicates-ai
-   ```
-
+1. Clone this repository
 2. Install dependencies:
-   ```
-   npm install
-   ```
 
-3. Ensure Ollama is installed and running with your preferred model:
-   ```
-   ollama pull gemma3:4b  # or any other model you prefer
-   ```
+```bash
+npm install
+```
 
 ## Configuration
 
-The main configuration is in `duplicate-lines.js`:
+Edit the configuration settings at the top of `duplicate-lines.js`:
 
-- `ROW_NAME`: The field to check for duplicates (default: 'Body HTML')
-- `ROW_NAME_ALT`: Alternative field name (if needed)
-- `MODEL`: The Ollama model to use (default: 'gemma3:4b', but can be changed to any model)
-- `BATCH_SIZE`: Number of items to process in parallel (default: 5)
+```javascript
+const CONFIG = {
+    // Input/Output settings
+    inputPath: './smart-collections.csv',           // Path to input CSV file
+    outputPath: './found-duplicates.csv',           // Path to output CSV with duplicate markers
+    variationsOutputPath: './variations-output.csv', // Path to output CSV with generated variations
+    
+    // Processing settings
+    batchSize: 5,                                   // Number of items to process in parallel
+    model: 'gemma3:4b',                             // Ollama model to use
+    excludedFields: ['Handle', 'ID', 'Command'],    // Fields to exclude from duplicate checking
+    
+    // Logging settings
+    verbose: true,                                  // Set to false for minimal console output
+};
+```
 
 ## Usage
 
-1. Export your Shopify data using Matrixify to a CSV file (default: `matrixify-output.csv`)
+Run the script:
 
-2. Run the script:
-   ```
-   node duplicate-lines.js
-   ```
-
-3. The script will:
-   - Parse the input CSV
-   - Identify duplicate entries
-   - Generate AI variations for duplicates
-   - Output two files:
-     - `found-duplicates.csv`: Original data with duplicate markers
-     - `variations-output.csv`: Duplicate entries with AI-generated variations
-
-4. Import the `variations-output.csv` file back into Shopify using Matrixify
-
-## Output Format
-
-The variations output file contains:
-- ID
-- Handle
-- Command
-- The modified field (e.g., Body HTML)
-- Original value
-- Duplicate flag
-
-This format is compatible with Matrixify's import structure, allowing for seamless data transfer back to Shopify.
-
-## Customization
-
-### Changing the Field to Check
-
-To check for duplicates in a different field, modify the `ROW_NAME` constant in `duplicate-lines.js`:
-
-```javascript
-const ROW_NAME = 'Title Tag'; // Change to your desired field
+```bash
+npm start
 ```
 
-### Changing the AI Model
+The script will:
+1. Read the CSV file specified in `inputPath`
+2. Identify duplicate entries
+3. Generate unique variations for duplicates using AI
+4. Write results to the specified output files
 
-To use a different Ollama model, modify the `MODEL` constant in `duplicate-lines.js`:
+## Output
 
-```javascript
-const MODEL = 'llama3:8b'; // Change to any model you have installed
+The script produces two output files:
+
+1. `found-duplicates.csv`: Contains all original data with duplicate entries marked
+2. `variations-output.csv`: Contains entries with AI-generated variations for the duplicate fields
+
+## Customizing Prompts
+
+Edit the prompt templates in `prompts.js` to customize how variations are generated. The script includes specialized prompts for:
+
+- Collection titles
+- Collection descriptions
+- HTML content
+- General text
+
+## Project Structure
+
+```
+├── duplicate-lines.js     # Main script and configuration
+├── prompts.js             # AI prompt templates for different content types
+├── package.json           # Project dependencies and scripts
+├── lib/                   # Modular components
+│   ├── ai.js              # AI interaction with Ollama
+│   ├── csv.js             # CSV parsing and writing
+│   ├── duplicates.js      # Duplicate detection logic
+│   ├── logger.js          # Configurable logging utilities
+│   └── variations.js      # Batch processing and variation generation
 ```
 
-### Adjusting AI Prompts
+### Modules Overview
 
-The AI prompts are defined in `prompts.js`. You can modify these to change how variations are generated.
+- **ai.js**: Handles interaction with Ollama API, prompt selection, and response cleaning
+- **csv.js**: Provides utilities for parsing, cleaning, and writing CSV files
+- **duplicates.js**: Contains logic to identify duplicate entries across multiple fields
+- **logger.js**: Offers configurable logging with support for different verbosity levels
+- **variations.js**: Manages batch processing and generation of variations for duplicates
 
 ## Troubleshooting
 
-- **Ollama Connection Issues**: Ensure Ollama is running and the specified model is available
-- **CSV Parsing Errors**: Check that your input CSV is properly formatted
-- **AI Generation Failures**: The script includes error handling to continue processing even if some variations fail
-- **Matrixify Import Issues**: Ensure the output CSV structure matches what Matrixify expects
+- **Performance Issues**: Reduce `batchSize` for less parallel processing if rate limits are hit
+- **Excessive Logging**: Set `verbose: false` in the configuration for minimal console output
+- **Memory Usage**: For very large files, consider processing in smaller chunks
 
 ## License
 
-[MIT License](LICENSE)
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. 
+MIT 
