@@ -1,19 +1,65 @@
 import fs from 'fs';
 import Papa from 'papaparse';
 import Ollama from 'ollama';
-import { getBodyPrompt } from './prompts.js';
+import { getBodyPrompt, getTitlePrompt, getDescriptionPrompt, getGeneralPrompt } from './prompts.js';
 
-const ROW_NAME = 'Body HTML';
-const ROW_NAME_ALT = '';
+// Fields to exclude from duplicate checking
+const EXCLUDED_FIELDS = ['Handle', 'ID', 'Command'];
 
 const MODEL = 'gemma3:4b';
 
-const getPrompt = getBodyPrompt;
-
-const inputPath = './matrixify-output.csv';
+const inputPath = './smart-collections.csv';
 const outputPath = './found-duplicates.csv';
 const variationsOutputPath = './variations-output.csv';
-const BATCH_SIZE = 5; // Process 5 items in parallel
+const BATCH_SIZE = 5;
+
+// Prompt selection based on field type
+const PROMPT_TYPES = {
+    TITLE: 'title',
+    DESCRIPTION: 'description',
+    HTML: 'html',
+    GENERAL: 'general'
+};
+
+/**
+ * Determine the prompt type based on the field name
+ * @param {string} fieldName - The name of the field
+ * @returns {string} The prompt type to use
+ */
+function getPromptType(fieldName) {
+    const lowerFieldName = fieldName.toLowerCase();
+
+    if (lowerFieldName.includes('title')) {
+        return PROMPT_TYPES.TITLE;
+    } else if (lowerFieldName.includes('description') && !lowerFieldName.includes('html')) {
+        return PROMPT_TYPES.DESCRIPTION;
+    } else if (lowerFieldName.includes('html')) {
+        return PROMPT_TYPES.HTML;
+    } else {
+        return PROMPT_TYPES.GENERAL;
+    }
+}
+
+/**
+ * Get the appropriate prompt function based on the field type
+ * @param {string} fieldName - The name of the field
+ * @returns {Function} The prompt function to use
+ */
+function getPromptFunction(fieldName) {
+    const promptType = getPromptType(fieldName);
+
+    switch (promptType) {
+        case PROMPT_TYPES.TITLE:
+            return getTitlePrompt;
+        case PROMPT_TYPES.DESCRIPTION:
+            return getDescriptionPrompt;
+        case PROMPT_TYPES.HTML:
+            return getBodyPrompt;
+        case PROMPT_TYPES.GENERAL:
+        default:
+            return getGeneralPrompt;
+    }
+}
 
 /**
  * Parse CSV file with the given settings
@@ -51,33 +97,35 @@ function parseCSV(filePath) {
  */
 function cleanData(data) {
     return data.filter((row) => {
-        const fieldValue = getFieldValue(row); // Try both possible column names
-        return fieldValue && fieldValue.trim() !== '';
+        // Check if any non-excluded field has a value
+        return Object.keys(row).some((key) => {
+            if (!EXCLUDED_FIELDS.includes(key)) {
+                return row[key] && row[key].trim() !== '';
+            }
+            return false;
+        });
     });
 }
 
 /**
- * Get the field value from a row, handling both primary and alternative field names
- * @param {Object} row - The row to extract the field value from
- * @returns {string|null} The field value or null if not found
+ * Get all field values from a row, excluding specified fields
+ * @param {Object} row - The row to extract field values from
+ * @returns {Object} Map of field names to their values
  */
-function getFieldValue(row) {
-    // First try the primary field name
-    if (row[ROW_NAME] && row[ROW_NAME].trim() !== '') {
-        return row[ROW_NAME];
-    }
+function getFieldValues(row) {
+    const values = {};
 
-    // Then try the alternative field name if it exists
-    if (row[ROW_NAME_ALT] && row[ROW_NAME_ALT].trim() !== '') {
-        return row[ROW_NAME_ALT];
-    }
+    Object.keys(row).forEach((key) => {
+        if (!EXCLUDED_FIELDS.includes(key) && row[key] && row[key].trim() !== '') {
+            values[key] = row[key].trim();
+        }
+    });
 
-    // Return null if neither field exists or has a value
-    return null;
+    return values;
 }
 
 /**
- * Count occurrences of each value in the specified field
+ * Count occurrences of each value in all fields
  * @param {Array} data - Cleaned data
  * @returns {Map} Map of values to their occurrence counts
  */
@@ -85,10 +133,12 @@ function countOccurrences(data) {
     const map = new Map();
 
     data.forEach((row) => {
-        const val = getFieldValue(row);
-        if (val) {
-            map.set(val.trim(), (map.get(val.trim()) || 0) + 1);
-        }
+        const fieldValues = getFieldValues(row);
+
+        Object.entries(fieldValues).forEach(([field, value]) => {
+            const key = `${field}:${value}`;
+            map.set(key, (map.get(key) || 0) + 1);
+        });
     });
 
     return map;
@@ -101,25 +151,38 @@ function countOccurrences(data) {
  * @returns {Object} Result with duplicates marked and array of duplicates
  */
 function findDuplicates(data, occurrenceMap) {
-    const seen = new Set();
+    const seen = new Map(); // Map to track seen values by field
     const duplicates = [];
 
-    const result = data
-        .filter((row) => {
-            const val = getFieldValue(row);
-            return val && occurrenceMap.get(val.trim()) > 1;
-        })
-        .map((row) => {
-            const val = getFieldValue(row);
-            if (!seen.has(val.trim())) {
-                seen.add(val.trim());
-                return { ...row, duplicate: 'false' };
-            } else {
-                // Add to duplicates array
-                duplicates.push(row);
-                return { ...row, duplicate: 'true' };
+    const result = data.map((row) => {
+        const fieldValues = getFieldValues(row);
+        let isDuplicate = false;
+        const duplicateFields = [];
+
+        // Check each field for duplicates
+        Object.entries(fieldValues).forEach(([field, value]) => {
+            const key = `${field}:${value}`;
+            if (occurrenceMap.get(key) > 1) {
+                if (!seen.has(key)) {
+                    seen.set(key, true);
+                } else {
+                    isDuplicate = true;
+                    duplicateFields.push(field);
+                }
             }
         });
+
+        // Add to duplicates array if any field is a duplicate
+        if (isDuplicate) {
+            duplicates.push({
+                ...row,
+                duplicateFields: duplicateFields.join(',')
+            });
+            return { ...row, duplicate: 'true', duplicateFields: duplicateFields.join(',') };
+        } else {
+            return { ...row, duplicate: 'false', duplicateFields: '' };
+        }
+    });
 
     return { result, duplicates };
 }
@@ -205,14 +268,22 @@ function cleanVariation(variation) {
  * Generate a variation using Ollama
  * @param {string} text - Text to generate a variation for
  * @param {string} handle - Product handle with additional details
+ * @param {string} fieldName - The name of the field being processed
  * @returns {Promise<string>} Generated variation
  */
-async function generateVariation(text, handle) {
+async function generateVariation(text, handle, fieldName) {
     console.log('\nGenerating variation for:');
+    console.log('Field:', fieldName);
     console.log('Original text:', text.substring(0, 100) + (text.length > 100 ? '...' : ''));
     console.log('Handle:', handle);
 
-    const PROMPT = getPrompt(text, handle);
+    // Get the appropriate prompt function based on the field type
+    const promptFunction = getPromptFunction(fieldName);
+    const promptType = getPromptType(fieldName);
+
+    console.log(`Using ${promptType} prompt for field "${fieldName}"`);
+
+    const PROMPT = promptFunction(text, handle);
     console.log(`Calling Ollama with ${MODEL} model...`);
 
     const response = await Ollama.chat({
@@ -257,36 +328,42 @@ async function processBatch(batch) {
 
     const promises = batch.map(async (row) => {
         console.log(`\nProcessing item ID: ${row.ID}`);
-        const originalValue = getFieldValue(row);
-        const handle = row.Handle || '';
 
-        try {
-            console.time(`Generation time for ID ${row.ID}`);
-            const variation = await generateVariation(originalValue, handle);
-            console.timeEnd(`Generation time for ID ${row.ID}`);
+        // Get the duplicate fields for this row
+        const duplicateFields = row.duplicateFields ? row.duplicateFields.split(',') : [];
 
-            // Create a new row with only the required fields
-            return {
-                ID: row.ID,
-                Handle: row.Handle,
-                Command: row.Command,
-                [ROW_NAME]: variation,
-                original: originalValue,
-                duplicate: 'true'
-            };
-        } catch (error) {
-            console.error(`❌ Error generating variation for ID ${row.ID}:`);
-            console.error(`   Error details: ${error.message}`);
-            // Return the original row without a variation
-            return {
-                ID: row.ID,
-                Handle: row.Handle,
-                Command: row.Command,
-                [ROW_NAME]: originalValue,
-                original: originalValue,
-                duplicate: 'true'
-            };
+        // Create a new row with the original values
+        const newRow = {
+            ID: row.ID,
+            Handle: row.Handle,
+            Command: row.Command,
+            duplicate: 'true',
+            duplicateFields: row.duplicateFields
+        };
+
+        // Generate variations for each duplicate field
+        for (const field of duplicateFields) {
+            const originalValue = row[field];
+            const handle = row.Handle || '';
+
+            try {
+                console.time(`Generation time for ID ${row.ID} - ${field}`);
+                const variation = await generateVariation(originalValue, handle, field);
+                console.timeEnd(`Generation time for ID ${row.ID} - ${field}`);
+
+                // Add the variation to the new row
+                newRow[field] = variation;
+                newRow[`original_${field}`] = originalValue;
+            } catch (error) {
+                console.error(`❌ Error generating variation for ID ${row.ID} - ${field}:`);
+                console.error(`   Error details: ${error.message}`);
+                // Keep the original value if variation generation fails
+                newRow[field] = originalValue;
+                newRow[`original_${field}`] = originalValue;
+            }
         }
+
+        return newRow;
     });
 
     const results = await Promise.all(promises);
